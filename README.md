@@ -22,11 +22,7 @@ An interactive, zero-install, single-file client-side web application designed t
 ## Getting Started
 
 ### Installation
-Because the application is fully standalone, setup requires only saving the file locally:
-
-1. Copy the core application source code into a local text editor (e.g., Notepad).
-2. Save the file under the extension `.html` (such as `manifest_viewer.html`).
-3. Double-click the file to open it natively in your browser.
+Because the application is fully standalone, setup requires only saving the file_manifest_browser.html file locally. Double-click the file to open it natively in your browser.
 
 ---
 
