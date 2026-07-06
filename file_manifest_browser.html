@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Storage Manifest Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border-left-color: #10b981;
+            animation: spin 1s linear infinite;
+        }
+        /* Style adjustments for column resizer handles */
+        .resizer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            cursor: col-resize;
+            user-select: none;
+            z-index: 20;
+            transition: background-color 0.15s;
+        }
+        .resizer:hover, .resizing {
+            background-color: #10b981 !important;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 w-full">
+    <div class="w-full mx-auto">
+        
+        <header class="mb-5 flex flex-col lg:flex-row justify-between items-start lg:items-center border-b border-slate-700 pb-4 gap-4">
+            <div class="flex items-center gap-4 flex-wrap w-full lg:w-auto">
+                <h1 class="text-xl font-bold text-white tracking-tight shrink-0">
+                    📦 Storage Manifest Viewer
+                </h1>
+                
+                <div class="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                    <button id="folderBtn" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1">
+                        📁 Select Folder
+                    </button>
+                    <button id="filesBtn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1">
+                        📄 Select File(s)
+                    </button>
+                    <button id="helpToggleBtn" class="border border-slate-700 hover:bg-slate-800 text-slate-400 font-medium text-xs px-2.5 py-1.5 rounded transition flex items-center gap-1">
+                        ❓ Commands Help
+                    </button>
+                    
+                    <input type="file" id="folderInput" class="hidden" webkitdirectory directory multiple>
+                    <input type="file" id="filesInput" class="hidden" multiple accept=".manifest,.txt">
+                </div>
+                <span id="loadStatus" class="text-xs font-mono text-slate-400">Awaiting manifest file upload...</span>
+            </div>
+            <div id="fileInfo" class="text-right text-xs text-emerald-400 font-mono bg-slate-950 px-3 py-1.5 rounded border border-slate-800 hidden"></div>
+        </header>
+
+        <div id="helpDrawer" class="hidden bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs font-mono space-y-3 mb-5 max-w-7xl shadow-inner">
+            <div>
+                <p class="font-bold text-emerald-400 mb-1">🐧 Linux Manifest Generation Command:</p>
+                <code class="bg-slate-900 p-2 block rounded border border-slate-800 text-slate-200 select-all overflow-x-auto">find /path/to/target/folder -ls &gt; linux.manifest</code>
+            </div>
+            <div>
+                <p class="font-bold text-sky-400 mb-1">🪟 Windows Manifest Generation Command (PowerShell):</p>
+                <code class="bg-slate-900 p-2 block rounded border border-slate-800 text-slate-200 select-all overflow-x-auto">gci "C:\path\to\target\folder" -r | % { "$($_.Mode)|$($_.Length)|$($_.LastWriteTime)|$($_.FullName)" } &gt; windows.manifest</code>
+            </div>
+        </div>
+
+        <div id="loader" class="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-50 flex flex-col items-center justify-center gap-3 hidden">
+            <div class="spinner"></div>
+            <div class="text-center">
+                <p class="text-sm font-bold text-white tracking-wide uppercase">Ingesting Manifests...</p>
+                <p id="loaderProgress" class="text-xs font-mono text-slate-400 mt-1 max-w-md truncate">Parsing archive records</p>
+            </div>
+        </div>
+
+        <div id="emptyPlaceholder" class="bg-slate-800/40 border border-slate-800 rounded-xl p-20 text-center my-12">
+            <p class="text-slate-400 text-sm">Please click <span class="text-emerald-400 font-semibold">Select Folder</span> or <span class="text-sky-400 font-semibold">Select File(s)</span> at the top left to populate your storage tree visualization.</p>
+        </div>
+
+        <div id="dashboard" class="hidden w-full">
+            
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-3.5 mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 shadow-xl">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Search Name Only</label>
+                    <input type="text" id="searchNameInp" placeholder="e.g. (.pdf OR .ppt) AND present*" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Search Full Path</label>
+                    <input type="text" id="searchPathInp" placeholder="e.g. (scicore OR group) AND (data OR raw)" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                </div>
+                
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Switch Manifest File</label>
+                    <div class="flex items-center gap-1">
+                        <select id="sourceFilter" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                            <option value="all">All Loaded Manifests</option>
+                        </select>
+                        <button id="removeManifestBtn" class="bg-red-700 hover:bg-red-600 text-white font-bold text-xs px-2.5 py-1.5 rounded transition hidden shrink-0 shadow-sm" title="Remove this manifest from local database">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Size Bounds Range</label>
+                    <div class="flex items-center gap-1">
+                        <input type="number" id="minSizeInp" placeholder="From" min="0" step="any" class="w-[35%] bg-slate-700 border border-slate-600 rounded px-1.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                        <input type="number" id="maxSizeInp" placeholder="To" min="0" step="any" class="w-[35%] bg-slate-700 border border-slate-600 rounded px-1.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                        <select id="sizeUnitSel" class="w-[30%] bg-slate-700 border border-slate-600 rounded px-1 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                            <option value="KB">KB</option>
+                            <option value="MB" selected>MB</option>
+                            <option value="GB">GB</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Filter Element Type</label>
+                    <select id="typeFilter" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                        <option value="all">All File System Entries</option>
+                        <option value="files">Regular Files Only</option>
+                        <option value="dirs">Directories Only</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button id="resetFilters" class="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-xs font-semibold uppercase tracking-wider py-2 px-4 rounded transition text-center text-slate-200">
+                        Clear Filters
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-slate-950 px-4 py-2 rounded-lg mb-4 text-xs font-mono flex items-center gap-2 overflow-x-auto border border-slate-800 shadow-md">
+                <span class="text-slate-500 shrink-0">📍 Path Tree Scope:</span>
+                <div id="breadcrumbs" class="flex items-center gap-1 text-emerald-400 whitespace-nowrap"></div>
+            </div>
+
+            <div class="bg-slate-800 rounded-xl shadow-2xl overflow-hidden border border-slate-700 w-full">
+                <div class="overflow-x-auto max-h-[72vh]">
+                    <table class="w-full text-left border-collapse min-w-full table-fixed">
+                        <thead class="bg-slate-700 text-slate-200 sticky top-0 text-xs font-semibold select-none z-10 border-b border-slate-600">
+                            <tr>
+                                <th class="p-3 relative border-r border-slate-600" style="width: 85px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('isDir')">Type <span id="sort-isDir"></span></span>
+                                    <div class="resizer bg-slate-600/30"></div>
+                                </th>
+                                <th class="p-3 relative border-r border-slate-600" style="width: 260px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('name')">Name <span id="sort-name"></span></span>
+                                    <div class="resizer bg-slate-600/30"></div>
+                                </th>
+                                <th class="p-3 relative border-r border-slate-600" style="width: 105px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('size')">Size <span id="sort-size"></span></span>
+                                    <div class="resizer bg-slate-600/30"></div>
+                                </th>
+                                <th class="p-3 relative border-r border-slate-600" style="width: 155px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('dateValue')">Date Modified <span id="sort-dateValue"></span></span>
+                                    <div class="resizer bg-slate-600/30"></div>
+                                </th>
+                                <th class="p-3 relative border-r border-slate-600" style="width: 500px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('fullPath')">Full Path <span id="sort-fullPath"></span></span>
+                                    <div class="resizer bg-slate-600/30"></div>
+                                </th>
+                                <th class="p-3 relative" style="width: 180px;">
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate" onclick="sortSourceFileList()">Source Profile</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-slate-700 text-xs font-mono bg-slate-900/10">
+                            </tbody>
+                    </table>
+                </div>
+                <div id="tableFooter" class="bg-slate-950 p-2.5 text-xs text-slate-400 font-mono text-right border-t border-slate-800 flex justify-between items-center px-4">
+                    <button id="resetAllFilters" class="text-slate-500 hover:text-slate-300 transition text-[11px] underline decoration-dotted">Reset Scope & Back to Root</button>
+                    <span id="footerMatchCount">Rows matched: 0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allItems = [];
+        let currentPath = ''; 
+        
+        let sortColumn = 'isDir';
+        let sortAscending = false; 
+
+        const folderInput = document.getElementById('folderInput');
+        const filesInput = document.getElementById('filesInput');
+        const dashboard = document.getElementById('dashboard');
+        const tableBody = document.getElementById('tableBody');
+        const loader = document.getElementById('loader');
+        const loaderProgress = document.getElementById('loaderProgress');
+        const sourceFilter = document.getElementById('sourceFilter');
+        const removeManifestBtn = document.getElementById('removeManifestBtn');
+        const emptyPlaceholder = document.getElementById('emptyPlaceholder');
+        const helpDrawer = document.getElementById('helpDrawer');
+
+        document.getElementById('folderBtn').addEventListener('click', () => folderInput.click());
+        document.getElementById('filesBtn').addEventListener('click', () => filesInput.click());
+        document.getElementById('helpToggleBtn').addEventListener('click', () => helpDrawer.classList.toggle('hidden'));
+
+        folderInput.addEventListener('change', (e) => { if (e.target.files.length) processFiles(Array.from(e.target.files)); });
+        filesInput.addEventListener('change', (e) => { if (e.target.files.length) processFiles(Array.from(e.target.files)); });
+
+        ['minSizeInp', 'maxSizeInp', 'sizeUnitSel', 'typeFilter'].forEach(id => {
+            document.getElementById(id).addEventListener('input', renderGrid);
+        });
+
+        // Dropdown toggle rule for individual manifest removal button layout
+        sourceFilter.addEventListener('input', () => {
+            if (sourceFilter.value === 'all') {
+                removeManifestBtn.classList.add('hidden');
+            } else {
+                removeManifestBtn.classList.remove('hidden');
+            }
+            renderGrid();
+        });
+
+        // Trigger logic routine parsing for Database Purges
+        removeManifestBtn.addEventListener('click', () => {
+            const targetSrc = sourceFilter.value;
+            if (targetSrc === 'all') return;
+            
+            if (confirm(`Are you sure you want to completely remove "${targetSrc}" from the active workspace?`)) {
+                allItems = allItems.filter(item => item.sourceFile !== targetSrc);
+                
+                const distinctSources = Array.from(new Set(allItems.map(i => i.sourceFile))).sort();
+                sourceFilter.innerHTML = '<option value="all">All Loaded Manifests</option>';
+                distinctSources.forEach(src => {
+                    if (src === '-') return;
+                    const opt = document.createElement('option');
+                    opt.value = src;
+                    opt.innerText = src;
+                    sourceFilter.appendChild(opt);
+                });
+
+                sourceFilter.value = 'all';
+                removeManifestBtn.classList.add('hidden');
+
+                if (allItems.length === 0) {
+                    document.getElementById('loadStatus').innerText = "Awaiting manifest file upload...";
+                    document.getElementById('fileInfo').classList.add('hidden');
+                    emptyPlaceholder.classList.remove('hidden');
+                    dashboard.classList.add('hidden');
+                } else {
+                    document.getElementById('loadStatus').innerText = `Aggregated total of ${distinctSources.filter(s => s !== '-').length} manifest profiles`;
+                    document.getElementById('fileInfo').innerHTML = `Database Size: <b>${allItems.length.toLocaleString()}</b> objects extracted`;
+                }
+                renderGrid();
+            }
+        });
+
+        const searchNameInp = document.getElementById('searchNameInp');
+        const searchPathInp = document.getElementById('searchPathInp');
+        
+        [searchNameInp, searchPathInp].forEach(inp => {
+            inp.addEventListener('change', renderGrid); 
+            inp.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    renderGrid();
+                }
+            });
+        });
+
+        document.getElementById('resetFilters').addEventListener('click', clearFilterControls);
+        document.getElementById('resetAllFilters').addEventListener('click', () => { clearFilterControls(); currentPath = ''; renderGrid(); });
+
+        function clearFilterControls() {
+            document.getElementById('searchNameInp').value = '';
+            document.getElementById('searchPathInp').value = '';
+            document.getElementById('minSizeInp').value = '';
+            document.getElementById('maxSizeInp').value = '';
+            document.getElementById('sizeUnitSel').value = 'MB';
+            document.getElementById('typeFilter').value = 'all';
+            document.getElementById('sourceFilter').value = 'all';
+            removeManifestBtn.classList.add('hidden');
+            renderGrid();
+        }
+
+        function showLoader(message) {
+            loaderProgress.innerText = message;
+            loader.classList.remove('hidden');
+        }
+
+        function processFiles(files) {
+            const manifestFiles = files.filter(f => f.name.endsWith('.manifest') || f.name.endsWith('.txt'));
+            if (!manifestFiles.length) {
+                alert("No compatible manifest snapshot files detected.");
+                return;
+            }
+
+            showLoader("Initializing ingestion pipeline...");
+            let completed = 0;
+            
+            setTimeout(async () => {
+                const activeMemorySourceNames = new Set(allItems.map(i => i.sourceFile));
+
+                for (let file of manifestFiles) {
+                    loaderProgress.innerText = `Parsing profile layers: (${completed + 1}/${manifestFiles.length})\n${file.name}`;
+                    const text = await new Promise(resolve => {
+                        const r = new FileReader();
+                        r.onload = (e) => resolve(e.target.result);
+                        r.readAsText(file);
+                    });
+
+                    let uniqueSuffixFilename = file.name;
+                    let duplicateCounter = 2;
+                    while (activeMemorySourceNames.has(uniqueSuffixFilename)) {
+                        uniqueSuffixFilename = `${file.name} #${duplicateCounter}`;
+                        duplicateCounter++;
+                    }
+                    activeMemorySourceNames.add(uniqueSuffixFilename); 
+
+                    parseManifestText(text, uniqueSuffixFilename);
+                    completed++;
+                }
+
+                const distinctSources = Array.from(new Set(allItems.map(i => i.sourceFile))).sort();
+                sourceFilter.innerHTML = '<option value="all">All Loaded Manifests</option>';
+                distinctSources.forEach(src => {
+                    if (src === '-') return; 
+                    const opt = document.createElement('option');
+                    opt.value = src;
+                    opt.innerText = src;
+                    sourceFilter.appendChild(opt);
+                });
+
+                folderInput.value = '';
+                filesInput.value = '';
+
+                document.getElementById('loadStatus').innerText = `Aggregated total of ${distinctSources.filter(s => s !== '-').length} manifest profiles`;
+                document.getElementById('fileInfo').innerHTML = `Database Size: <b>${allItems.length.toLocaleString()}</b> objects extracted`;
+                document.getElementById('fileInfo').classList.remove('hidden');
+                
+                emptyPlaceholder.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                
+                currentPath = ''; 
+                loader.classList.add('hidden');
+                renderGrid();
+            }, 50);
+        }
+
+        function parseManifestText(text, filename) {
+            const lines = text.split('\n');
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+                
+                let name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink;
+
+                if (trimmed.includes('|')) {
+                    const parts = trimmed.split('|');
+                    if (parts.length < 4) return;
+
+                    const mode = parts[0];
+                    size = parseInt(parts[1], 10) || 0;
+                    dateStr = parts[2];
+
+                    const parsedTime = Date.parse(dateStr);
+                    dateValue = isNaN(parsedTime) ? 0 : parsedTime;
+
+                    let rawPath = parts.slice(3).join('|').replace(/\\/g, '/');
+                    if (!rawPath.startsWith('/')) {
+                        rawPath = '/' + rawPath;
+                    }
+                    fullPath = rawPath;
+
+                    isDir = mode.toLowerCase().includes('d');
+                    isLink = mode.toLowerCase().includes('l');
+
+                    const pathSegments = fullPath.split('/').filter(Boolean);
+                    name = pathSegments[pathSegments.length - 1] || '/';
+                    parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                } else {
+                    const parts = trimmed.split(/\s+/);
+                    if (parts.length < 11) return;
+
+                    const perms = parts[2];
+                    size = parseInt(parts[6], 10) || 0;
+                    dateStr = `${parts[7]} ${parts[8]} ${parts[9]}`;
+                    
+                    let rawPath = parts.slice(10).join(' ').replace(/\\\s/g, ' ');
+                    if (!rawPath.startsWith('/')) {
+                        rawPath = '/' + rawPath;
+                    }
+                    fullPath = rawPath;
+
+                    isDir = perms.startsWith('d');
+                    isLink = perms.startsWith('l');
+
+                    const pathSegments = fullPath.split('/').filter(Boolean);
+                    name = pathSegments[pathSegments.length - 1] || '/';
+                    parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                    dateValue = convertToTimestamp(parts[7], parts[8], parts[9]);
+                }
+
+                allItems.push({ 
+                    name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink, sourceFile: filename 
+                });
+            });
+        }
+
+        function convertToTimestamp(mStr, dStr, yOrTStr) {
+            const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+            const m = months[mStr] !== undefined ? months[mStr] : 0;
+            const d = parseInt(dStr, 10) || 1;
+            let y = 2017;
+            if (!yOrTStr.includes(':')) y = parseInt(yOrTStr, 10) || 2017;
+            return new Date(y, m, d).getTime();
+        }
+
+        function parseQueryToRPN(queryStr) {
+            if (!queryStr.trim()) return null;
+            const tokens = queryStr.match(/\(|\)|\bAND\b|\bOR\b|"[^"]*"|[^\s()]+/g) || [];
+            const outputQueue = [];
+            const operatorStack = [];
+            const precedence = { 'OR': 1, 'AND': 2 };
+            let prevType = null; 
+
+            for (let token of tokens) {
+                let currentType = 'TERM';
+                if (token === 'AND' || token === 'OR') currentType = 'OP';
+                else if (token === '(') currentType = 'OPEN_PAREN';
+                else if (token === ')') currentType = 'CLOSE_PAREN';
+
+                if (currentType === 'TERM' || currentType === 'OPEN_PAREN') {
+                    if (prevType === 'TERM' || prevType === 'CLOSE_PAREN') {
+                        while (operatorStack.length && operatorStack[operatorStack.length - 1] !== '(' && 
+                               precedence[operatorStack[operatorStack.length - 1]] >= precedence['AND']) {
+                            outputQueue.push(operatorStack.pop());
+                        }
+                        operatorStack.push('AND');
+                    }
+                }
+
+                if (currentType === 'OP') {
+                    while (operatorStack.length && operatorStack[operatorStack.length - 1] !== '(' && 
+                           precedence[operatorStack[operatorStack.length - 1]] >= precedence[token]) {
+                        outputQueue.push(operatorStack.pop());
+                    }
+                    operatorStack.push(token);
+                } else if (currentType === 'OPEN_PAREN') {
+                    operatorStack.push('(');
+                } else if (currentType === 'CLOSE_PAREN') {
+                    while (operatorStack.length && operatorStack[operatorStack.length - 1] !== '(') {
+                        outputQueue.push(operatorStack.pop());
+                    }
+                    if (operatorStack.length && operatorStack[operatorStack.length - 1] === '(') {
+                        operatorStack.pop(); 
+                    }
+                } else {
+                    let term = token;
+                    if (term.startsWith('"') && term.endsWith('"')) {
+                        term = term.slice(1, -1);
+                    }
+                    outputQueue.push({ term: term.toLowerCase() });
+                }
+                prevType = currentType;
+            }
+
+            while (operatorStack.length) {
+                const op = operatorStack.pop();
+                if (op !== '(' && op !== ')') {
+                    outputQueue.push(op);
+                }
+            }
+            return outputQueue;
+        }
+
+        function evaluateRPN(rpn, targetStr) {
+            if (!rpn || rpn.length === 0) return true;
+            const stack = [];
+            const lowerTarget = targetStr.toLowerCase();
+
+            try {
+                for (let node of rpn) {
+                    if (node === 'AND') {
+                        if (stack.length < 2) return false;
+                        const b = stack.pop();
+                        const a = stack.pop();
+                        stack.push(!!(a && b));
+                    } else if (node === 'OR') {
+                        if (stack.length < 2) return false;
+                        const b = stack.pop();
+                        const a = stack.pop();
+                        stack.push(!!(a || b));
+                    } else if (node && node.term !== undefined) {
+                        if (node.term.includes('*') || node.term.includes('?')) {
+                            let regStr = node.term.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+                            regStr = regStr.replace(/\*/g, '.*').replace(/\?/g, '.');
+                            let regex = new RegExp('^' + regStr + '$');
+                            stack.push(regex.test(lowerTarget));
+                        } else {
+                            stack.push(lowerTarget.includes(node.term));
+                        }
+                    } else {
+                        stack.push(false);
+                    }
+                }
+                return stack.length === 1 ? stack[0] : false;
+            } catch (e) {
+                return false; 
+            }
+        }
+
+        function handleSort(column) {
+            if (sortColumn === column) {
+                sortAscending = !sortAscending;
+            } else {
+                sortColumn = column;
+                sortAscending = true;
+            }
+            renderGrid();
+        }
+
+        function sortSourceFileList() {
+            handleSort('sourceFile');
+        }
+
+        function updateSortUI() {
+            const headers = ['isDir', 'name', 'size', 'dateValue', 'fullPath'];
+            headers.forEach(h => {
+                const badge = document.getElementById(`sort-${h}`);
+                if (!badge) return;
+                if (sortColumn === h) {
+                    badge.innerText = sortAscending ? ' ▲' : ' ▼';
+                    badge.className = 'text-emerald-400 font-bold';
+                } else {
+                    badge.innerText = ' ↕';
+                    badge.className = 'text-slate-500 opacity-30';
+                }
+            });
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function changeDirectory(path) {
+            currentPath = path;
+            renderGrid();
+        }
+
+        function updateBreadcrumbs() {
+            const container = document.getElementById('breadcrumbs');
+            container.innerHTML = '';
+            
+            const rootBtn = document.createElement('span');
+            rootBtn.innerText = "📁 Root";
+            rootBtn.className = "cursor-pointer hover:underline text-slate-400 mr-1";
+            rootBtn.onclick = () => changeDirectory('');
+            container.appendChild(rootBtn);
+
+            if (!currentPath) return;
+
+            const segments = currentPath.split('/').filter(Boolean);
+            let cumulativePath = '';
+            
+            segments.forEach((seg) => {
+                cumulativePath += '/' + seg;
+                const arrow = document.createElement('span');
+                arrow.innerText = '❯';
+                arrow.className = 'text-slate-600 font-bold text-[10px] px-1';
+                container.appendChild(arrow);
+
+                const span = document.createElement('span');
+                span.innerText = seg;
+                span.className = "cursor-pointer hover:underline hover:text-white font-medium";
+                const target = cumulativePath;
+                span.onclick = () => changeDirectory(target);
+                container.appendChild(span);
+            });
+        }
+
+        function renderGrid() {
+            updateBreadcrumbs();
+            updateSortUI();
+            
+            const searchNameVal = searchNameInp.value;
+            const searchPathVal = searchPathInp.value;
+            const minSizeInpValue = document.getElementById('minSizeInp').value;
+            const maxSizeInpValue = document.getElementById('maxSizeInp').value;
+            const sizeUnit = document.getElementById('sizeUnitSel').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            const srcFilter = document.getElementById('sourceFilter').value;
+
+            let multiplier = 1024 * 1024; 
+            if (sizeUnit === 'KB') multiplier = 1024;
+            if (sizeUnit === 'GB') multiplier = 1024 * 1024 * 1024;
+
+            const minSizeBytes = minSizeInpValue !== '' ? parseFloat(minSizeInpValue) * multiplier : 0;
+            const maxSizeBytes = maxSizeInpValue !== '' ? parseFloat(maxSizeInpValue) * multiplier : Infinity;
+
+            const compiledNameRPN = parseQueryToRPN(searchNameVal);
+            const compiledPathRPN = parseQueryToRPN(searchPathVal);
+
+            tableBody.innerHTML = '';
+
+            let globallyFiltered = allItems.filter(item => {
+                if (srcFilter !== 'all' && item.sourceFile !== srcFilter) return false;
+                if (typeFilter === 'files' && item.isDir) return false;
+                if (typeFilter === 'dirs' && !item.isDir) return false;
+                if (item.size < minSizeBytes || item.size > maxSizeBytes) return false;
+                
+                if (searchNameVal && !evaluateRPN(compiledNameRPN, item.name)) return false;
+                if (searchPathVal && !evaluateRPN(compiledPathRPN, item.fullPath)) return false;
+                return true;
+            });
+
+            let finalRenderSet = [];
+            let virtualDirectoryMap = new Set();
+
+            const isAnyFilteringActive = searchNameVal.trim() !== '' || 
+                                         searchPathVal.trim() !== '' || 
+                                         minSizeInpValue !== '' || 
+                                         maxSizeInpValue !== '';
+
+            if (isAnyFilteringActive) {
+                finalRenderSet = globallyFiltered;
+            } else {
+                globallyFiltered.forEach(item => {
+                    if (item.parentPath === currentPath) {
+                        finalRenderSet.push(item);
+                    } else if (currentPath === '' || item.parentPath.startsWith(currentPath + '/')) {
+                        let trackingSlice = currentPath === '' ? item.fullPath : item.fullPath.slice(currentPath.length);
+                        let pathChunks = trackingSlice.split('/').filter(Boolean);
+                        
+                        if (pathChunks.length > 1 || (pathChunks.length === 1 && item.isDir)) {
+                            let nextSegment = pathChunks[0];
+                            let nextPathString = currentPath === '' ? '/' + nextSegment : currentPath + '/' + nextSegment;
+                            virtualDirectoryMap.add(JSON.stringify({ name: nextSegment, fullPath: nextPathString }));
+                        }
+                    }
+                });
+
+                virtualDirectoryMap.forEach(vJson => {
+                    let dirNode = JSON.parse(vJson);
+                    if (!finalRenderSet.some(existingItem => existingItem.isDir && existingItem.fullPath === dirNode.fullPath)) {
+                        finalRenderSet.push({
+                            name: dirNode.name,
+                            size: 0,
+                            dateStr: '-',
+                            dateValue: 0,
+                            fullPath: dirNode.fullPath,
+                            parentPath: currentPath,
+                            isDir: true,
+                            isLink: false,
+                            isVirtualFolder: true,
+                            sourceFile: '-'
+                        });
+                    }
+                });
+            }
+
+            finalRenderSet.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return sortAscending ? -1 : 1;
+                if (valA > valB) return sortAscending ? 1 : -1;
+                return 0;
+            });
+
+            const UI_LIMIT = 2000;
+            const printList = finalRenderSet.slice(0, UI_LIMIT);
+
+            printList.forEach(item => {
+                const row = document.createElement('tr');
+                row.className = item.isDir ? "bg-slate-800/20 hover:bg-slate-700/40 border-b border-slate-800" : "hover:bg-slate-700/20 border-b border-slate-800";
+                
+                let typeBadge = item.isDir ? '📁 DIR' : '📄 FILE';
+                if (item.isLink) typeBadge = '🔗 LINK';
+                const typeColor = item.isDir ? 'text-amber-400' : 'text-slate-400';
+
+                let itemLabel = `<span class="truncate block">${item.name}</span>`;
+                if (item.isDir) {
+                    itemLabel = `<span class="text-amber-300 font-semibold cursor-pointer hover:underline flex items-center gap-1 truncate" onclick="changeDirectory('${item.fullPath}')">📁 ${item.name}</span>`;
+                }
+
+                let resolvedTargetUrl = item.fullPath;
+                if (!resolvedTargetUrl.startsWith('file://') && !resolvedTargetUrl.startsWith('http')) {
+                    if (resolvedTargetUrl.startsWith('/') && resolvedTargetUrl.match(/^\/[A-Za-z]:/)) {
+                        resolvedTargetUrl = 'file://' + resolvedTargetUrl;
+                    } else if (resolvedTargetUrl.match(/^[A-Za-z]:/)) {
+                        resolvedTargetUrl = 'file:///' + resolvedTargetUrl;
+                    } else {
+                        resolvedTargetUrl = 'file://' + resolvedTargetUrl;
+                    }
+                }
+
+                row.innerHTML = `
+                    <td class="p-2 text-[11px] font-bold ${typeColor} border-r border-slate-800 truncate">${typeBadge}</td>
+                    <td class="p-2 font-semibold border-r border-slate-800 truncate">${itemLabel}</td>
+                    <td class="p-2 text-slate-300 border-r border-slate-800 truncate">${item.isDir && item.isVirtualFolder ? '-' : formatBytes(item.size)}</td>
+                    <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate">${item.dateStr}</td>
+                    <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate" title="Click to launch local resource path">
+                        <a href="${resolvedTargetUrl}" target="_blank" class="no-underline text-slate-400 hover:text-emerald-400 transition block truncate">${item.fullPath}</a>
+                    </td>
+                    <td class="p-2 text-slate-500 text-[11px] truncate" title="${item.sourceFile}">${item.sourceFile}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+
+            document.getElementById('footerMatchCount').innerText = `Displaying lines: ${printList.length.toLocaleString()} of ${finalRenderSet.length.toLocaleString()} matching profiles.`;
+        }
+
+        // --- NATIVE MOUSE COLUMN DRAG/RESIZE INTERACTION UTILITY LAYER ---
+        function initResizableColumns() {
+            const table = document.querySelector('table');
+            const headers = table.querySelectorAll('th');
+            
+            headers.forEach(header => {
+                const resizer = header.querySelector('.resizer');
+                if (!resizer) return;
+
+                resizer.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation(); 
+
+                    const startX = e.clientX;
+                    const startWidth = header.offsetWidth;
+                    
+                    resizer.classList.add('resizing');
+
+                    function onMouseMove(moveEvent) {
+                        const currentWidth = startWidth + (moveEvent.clientX - startX);
+                        if (currentWidth > 45) { 
+                            header.style.width = currentWidth + 'px';
+                        }
+                    }
+
+                    function onMouseUp() {
+                        resizer.classList.remove('resizing');
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                    }
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            });
+        }
+
+        initResizableColumns();
+    </script>
+</body>
+</html>
