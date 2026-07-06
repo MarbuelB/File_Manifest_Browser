@@ -45,6 +45,9 @@
                 </h1>
                 
                 <div class="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                    <button id="generateBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Scan local folder and auto-generate manifest">
+                        🪄 Auto-Generate
+                    </button>
                     <button id="folderBtn" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1">
                         📁 Select Folder
                     </button>
@@ -207,10 +210,140 @@
         document.getElementById('filesBtn').addEventListener('click', () => filesInput.click());
         document.getElementById('helpToggleBtn').addEventListener('click', () => helpDrawer.classList.toggle('hidden'));
 
+        document.getElementById('generateBtn').addEventListener('click', async () => {
+            try {
+                if (!window.showDirectoryPicker) {
+                    alert('Your browser does not support the File System Access API. Please use a modern Chromium-based browser (Chrome, Edge).');
+                    return;
+                }
+
+                const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+                
+                let basePath = prompt("To enable clickable file links, please paste the full absolute path to this folder (e.g., C:\\path\\to\\" + dirHandle.name + ").\n\nIf you leave this blank, links will use a relative path and may not open locally.", "");
+                if (basePath !== null) {
+                    basePath = basePath.trim().replace(/\\/g, '/');
+                    if (basePath && !basePath.endsWith('/' + dirHandle.name) && !basePath.endsWith('/' + dirHandle.name + '/')) {
+                        if (!basePath.endsWith('/')) basePath += '/';
+                        basePath += dirHandle.name;
+                    }
+                }
+                if (!basePath) {
+                    basePath = '/' + dirHandle.name;
+                }
+                if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+                showLoader("Scanning directory structure...");
+                
+                const files = [];
+                let fileCount = 0;
+                
+                async function scanDirectory(handle, currentPath) {
+                    try {
+                        for await (const entry of handle.values()) {
+                            fileCount++;
+                            if (fileCount % 250 === 0) {
+                                loaderProgress.innerText = `Scanned ${fileCount} items...`;
+                            }
+                            const entryPath = currentPath === '' ? entry.name : `${currentPath}/${entry.name}`;
+                            if (entry.kind === 'file') {
+                                const file = await entry.getFile();
+                                files.push({
+                                    name: entry.name,
+                                    path: entryPath,
+                                    size: file.size,
+                                    lastModified: file.lastModified,
+                                    isDir: false
+                                });
+                            } else if (entry.kind === 'directory') {
+                                files.push({
+                                    name: entry.name,
+                                    path: entryPath,
+                                    size: 0,
+                                    lastModified: Date.now(),
+                                    isDir: true
+                                });
+                                await scanDirectory(entry, entryPath);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Error reading directory entry', e);
+                    }
+                }
+
+                await scanDirectory(dirHandle, '');
+                
+                loaderProgress.innerText = `Formatting ${files.length} items...`;
+                
+                // Add the root folder itself
+                let manifestStr = `d-----|0|${new Date().toLocaleString('en-US')}|${basePath}\n`;
+                for (const f of files) {
+                    const mode = f.isDir ? 'd-----' : '-a----';
+                    const len = f.size;
+                    const lwt = new Date(f.lastModified).toLocaleString('en-US');
+                    const fullName = `${basePath}/${f.path}`;
+                    manifestStr += `${mode}|${len}|${lwt}|${fullName}\n`;
+                }
+                
+                const now = new Date();
+                const pad = n => n.toString().padStart(2, '0');
+                const timestamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+                const safeDirName = dirHandle.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+                const generatedFilename = `${timestamp}_${safeDirName}.manifest`;
+
+                const blob = new Blob([manifestStr], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = generatedFilename;
+                a.click();
+                URL.revokeObjectURL(url);
+
+                loaderProgress.innerText = `Ingesting generated manifest...`;
+                
+                let uniqueSuffixFilename = generatedFilename;
+                let duplicateCounter = 2;
+                const activeMemorySourceNames = new Set(allItems.map(i => i.sourceFile));
+                while (activeMemorySourceNames.has(uniqueSuffixFilename)) {
+                    uniqueSuffixFilename = `${generatedFilename} #${duplicateCounter}`;
+                    duplicateCounter++;
+                }
+
+                parseManifestText(manifestStr, uniqueSuffixFilename);
+                
+                const distinctSources = Array.from(new Set(allItems.map(i => i.sourceFile))).sort();
+                sourceFilter.innerHTML = '<option value="all">All Loaded Manifests</option>';
+                distinctSources.forEach(src => {
+                    if (src === '-') return; 
+                    const opt = document.createElement('option');
+                    opt.value = src;
+                    opt.innerText = src;
+                    sourceFilter.appendChild(opt);
+                });
+
+                document.getElementById('loadStatus').innerText = `Aggregated total of ${distinctSources.filter(s => s !== '-').length} manifest profiles`;
+                document.getElementById('fileInfo').innerHTML = `Database Size: <b>${allItems.length.toLocaleString()}</b> objects extracted`;
+                document.getElementById('fileInfo').classList.remove('hidden');
+                
+                emptyPlaceholder.classList.add('hidden');
+                dashboard.classList.remove('hidden');
+                
+                currentPath = findCommonPathPrefix(); 
+                loader.classList.add('hidden');
+                renderGrid();
+                
+            } catch (err) {
+                loader.classList.add('hidden');
+                if (err.name !== 'AbortError') {
+                    console.error(err);
+                    alert('Error generating manifest: ' + err.message);
+                }
+            }
+        });
+
         folderInput.addEventListener('change', (e) => { if (e.target.files.length) processFiles(Array.from(e.target.files)); });
         filesInput.addEventListener('change', (e) => { if (e.target.files.length) processFiles(Array.from(e.target.files)); });
 
-        ['minSizeInp', 'maxSizeInp', 'sizeUnitSel', 'typeFilter'].forEach(id => {
+        ['sizeUnitSel', 'typeFilter'].forEach(id => {
             document.getElementById(id).addEventListener('input', renderGrid);
         });
 
@@ -260,8 +393,10 @@
 
         const searchNameInp = document.getElementById('searchNameInp');
         const searchPathInp = document.getElementById('searchPathInp');
+        const minSizeInp = document.getElementById('minSizeInp');
+        const maxSizeInp = document.getElementById('maxSizeInp');
         
-        [searchNameInp, searchPathInp].forEach(inp => {
+        [searchNameInp, searchPathInp, minSizeInp, maxSizeInp].forEach(inp => {
             inp.addEventListener('change', renderGrid); 
             inp.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
@@ -271,7 +406,7 @@
         });
 
         document.getElementById('resetFilters').addEventListener('click', clearFilterControls);
-        document.getElementById('resetAllFilters').addEventListener('click', () => { clearFilterControls(); currentPath = ''; renderGrid(); });
+        document.getElementById('resetAllFilters').addEventListener('click', () => { clearFilterControls(); currentPath = findCommonPathPrefix(); renderGrid(); });
 
         function clearFilterControls() {
             document.getElementById('searchNameInp').value = '';
@@ -343,7 +478,7 @@
                 emptyPlaceholder.classList.add('hidden');
                 dashboard.classList.remove('hidden');
                 
-                currentPath = ''; 
+                currentPath = findCommonPathPrefix(); 
                 loader.classList.add('hidden');
                 renderGrid();
             }, 50);
@@ -549,8 +684,47 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
+        function findCommonPathPrefix() {
+            if (allItems.length === 0) return '';
+            
+            let commonParts = null;
+            for (let item of allItems) {
+                const parts = item.fullPath.split('/').filter(Boolean);
+                const dirParts = item.isDir ? parts : parts.slice(0, -1);
+                
+                if (commonParts === null) {
+                    commonParts = dirParts;
+                } else {
+                    let matchCount = 0;
+                    while (matchCount < commonParts.length && matchCount < dirParts.length && commonParts[matchCount] === dirParts[matchCount]) {
+                        matchCount++;
+                    }
+                    commonParts = commonParts.slice(0, matchCount);
+                }
+                if (commonParts.length === 0) return '';
+            }
+            
+            if (!commonParts || commonParts.length === 0) return '';
+            return '/' + commonParts.join('/');
+        }
+
         function changeDirectory(path) {
             currentPath = path;
+            
+            // Clear filter inputs that cause the view to flatten globally, 
+            // so the user can actually see inside the folder they clicked
+            const searchNameInp = document.getElementById('searchNameInp');
+            const searchPathInp = document.getElementById('searchPathInp');
+            const minSizeInp = document.getElementById('minSizeInp');
+            const maxSizeInp = document.getElementById('maxSizeInp');
+            
+            if (searchNameInp.value || searchPathInp.value || minSizeInp.value || maxSizeInp.value) {
+                searchNameInp.value = '';
+                searchPathInp.value = '';
+                minSizeInp.value = '';
+                maxSizeInp.value = '';
+            }
+            
             renderGrid();
         }
 
@@ -561,7 +735,7 @@
             const rootBtn = document.createElement('span');
             rootBtn.innerText = "📁 Root";
             rootBtn.className = "cursor-pointer hover:underline text-slate-400 mr-1";
-            rootBtn.onclick = () => changeDirectory('');
+            rootBtn.onclick = () => changeDirectory(findCommonPathPrefix());
             container.appendChild(rootBtn);
 
             if (!currentPath) return;
@@ -709,8 +883,11 @@
                     <td class="p-2 font-semibold border-r border-slate-800 truncate">${itemLabel}</td>
                     <td class="p-2 text-slate-300 border-r border-slate-800 truncate">${item.isDir && item.isVirtualFolder ? '-' : formatBytes(item.size)}</td>
                     <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate">${item.dateStr}</td>
-                    <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate" title="Click to launch local resource path">
-                        <a href="${resolvedTargetUrl}" target="_blank" class="no-underline text-slate-400 hover:text-emerald-400 transition block truncate">${item.fullPath}</a>
+                    <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate" title="Local resource path">
+                        <div class="flex items-center justify-start gap-2">
+                            <a href="${resolvedTargetUrl}" target="_blank" title="Open file location" class="no-underline text-slate-500 hover:text-emerald-400 transition shrink-0 text-sm">↗️</a>
+                            <span class="truncate select-all cursor-text" title="Click to select path">${item.fullPath}</span>
+                        </div>
                     </td>
                     <td class="p-2 text-slate-500 text-[11px] truncate" title="${item.sourceFile}">${item.sourceFile}</td>
                 `;

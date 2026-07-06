@@ -5,6 +5,8 @@ An interactive, zero-install, single-file client-side web application designed t
 ## Key Features
 
 * **Zero Local Software:** Runs fully localized within any modern browser window (Chrome, Edge, Firefox). Requires no local web servers, node environments, or installation scripts.
+* **Native Browser Auto-Generation:** Leverages the modern File System Access API to scan local folders and auto-generate manifest logs directly inside the browser, no terminal required!
+* **Smart Root Navigation:** Automatically calculates the deepest common folder across all loaded files and jumps you straight there, skipping empty, linear parent directories.
 * **Dual-Format Auto-Detection Engine:** Line-by-line smart format interpretation that seamlessly reads standard Linux file system trees and native Windows command logs side-by-side.
 * **Interactive Tree Browser:** Dynamically aggregates independent snapshots under a single unified virtual Root node, automatically merging overlapping directory branches while preserving distinct target file objects.
 * **Advanced Boolean Query Parser:** Full client-side Boolean implementation backing case-sensitive operators (`AND`, `OR`) alongside parentheses `()` for processing highly customized logic stacks.
@@ -28,14 +30,24 @@ Because the application is fully standalone, setup requires only saving the `fil
 
 ## Manifest Generation Commands
 
-To view file layers inside the viewer, create snapshot files using these native operating system terminal commands:
+### 1. Automatic Client-Side Generation (Recommended)
+You can generate manifest files directly from the browser without using terminal commands! 
+1. Click the **🪄 Auto-Generate** button in the top left.
+2. Select any folder on your local computer.
+3. If prompted, paste the absolute path of your folder to ensure all file links are fully clickable.
+The browser will securely scan the folder, save a `.manifest` file for your records, and instantly load the results into the viewer.
 
-### In Linux Environments
+---
+
+### 2. Manual CLI Generation
+To view file layers of remote servers or environments where the browser cannot access the file system directly, create snapshot files using these native operating system terminal commands:
+
+#### In Linux Environments
 Run the standard find command utilizing the long-listing flag to output the precise 11-column string format:
 
     find /path/to/target/folder -ls > linux.manifest
 
-### In Windows Environments
+#### In Windows Environments
 Run this custom pipeline string from a native administrative PowerShell console window to construct an equivalent pipe-delimited output string:
 
     gci "C:\path\to\target\folder" -r | % { "$($_.Mode)|$($_.Length)|$($_.LastWriteTime)|$($_.FullName)" } > windows.manifest
