@@ -146,13 +146,13 @@
                 <div id="breadcrumbs" class="flex items-center gap-1 text-emerald-400 whitespace-nowrap"></div>
             </div>
 
-            <div class="bg-slate-800 rounded-xl shadow-2xl overflow-hidden border border-slate-700 w-full">
-                <div class="overflow-x-auto max-h-[72vh]">
+            <div class="bg-slate-800 rounded-xl shadow-2xl overflow-hidden border border-slate-700 w-full flex flex-col h-[65vh]">
+                <div class="overflow-y-auto flex-1 w-full">
                     <table class="w-full text-left border-collapse min-w-full table-fixed">
                         <thead class="bg-slate-700 text-slate-200 sticky top-0 text-xs font-semibold select-none z-10 border-b border-slate-600">
                             <tr>
                                 <th class="p-3 relative border-r border-slate-600" style="width: 85px;">
-                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('isDir')">Type <span id="sort-isDir"></span></span>
+                                    <span class="cursor-pointer hover:text-emerald-400 block truncate pr-2" onclick="handleSort('isDir')">Type/Link <span id="sort-isDir"></span></span>
                                     <div class="resizer bg-slate-600/30"></div>
                                 </th>
                                 <th class="p-3 relative border-r border-slate-600" style="width: 260px;">
@@ -180,7 +180,7 @@
                             </tbody>
                     </table>
                 </div>
-                <div id="tableFooter" class="bg-slate-950 p-2.5 text-xs text-slate-400 font-mono text-right border-t border-slate-800 flex justify-between items-center px-4">
+                <div id="tableFooter" class="bg-slate-950 p-2.5 text-xs text-slate-400 font-mono text-right border-t border-slate-800 flex justify-between items-center px-4 shrink-0">
                     <button id="resetAllFilters" class="text-slate-500 hover:text-slate-300 transition text-[11px] underline decoration-dotted">Reset Scope & Back to Root</button>
                     <span id="footerMatchCount">Rows matched: 0</span>
                 </div>
@@ -220,17 +220,20 @@
                 const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
                 
                 let basePath = prompt("To enable clickable file links, please paste the full absolute path to this folder (e.g., C:\\path\\to\\" + dirHandle.name + ").\n\nIf you leave this blank, links will use a relative path and may not open locally.", "");
+                let genSep = '/';
                 if (basePath !== null) {
-                    basePath = basePath.trim().replace(/\\/g, '/');
-                    if (basePath && !basePath.endsWith('/' + dirHandle.name) && !basePath.endsWith('/' + dirHandle.name + '/')) {
-                        if (!basePath.endsWith('/')) basePath += '/';
+                    basePath = basePath.trim();
+                    if (basePath.includes('\\') || basePath.match(/^[A-Za-z]:/)) genSep = '\\';
+                    
+                    if (basePath && !basePath.endsWith(genSep + dirHandle.name) && !basePath.endsWith(genSep + dirHandle.name + genSep)) {
+                        if (!basePath.endsWith(genSep)) basePath += genSep;
                         basePath += dirHandle.name;
                     }
                 }
                 if (!basePath) {
-                    basePath = '/' + dirHandle.name;
+                    basePath = genSep + dirHandle.name;
                 }
-                if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+                if (basePath.endsWith(genSep)) basePath = basePath.slice(0, -1);
 
                 showLoader("Scanning directory structure...");
                 
@@ -244,7 +247,7 @@
                             if (fileCount % 250 === 0) {
                                 loaderProgress.innerText = `Scanned ${fileCount} items...`;
                             }
-                            const entryPath = currentPath === '' ? entry.name : `${currentPath}/${entry.name}`;
+                            const entryPath = currentPath === '' ? entry.name : `${currentPath}${genSep}${entry.name}`;
                             if (entry.kind === 'file') {
                                 const file = await entry.getFile();
                                 files.push({
@@ -274,13 +277,21 @@
                 
                 loaderProgress.innerText = `Formatting ${files.length} items...`;
                 
+                const nowD = new Date();
+                const padDateHeader = n => n.toString().padStart(2, '0');
+                const nowLwt = `${padDateHeader(nowD.getMonth() + 1)}/${padDateHeader(nowD.getDate())}/${nowD.getFullYear()} ${padDateHeader(nowD.getHours())}:${padDateHeader(nowD.getMinutes())}:${padDateHeader(nowD.getSeconds())}`;
+                
                 // Add the root folder itself
-                let manifestStr = `d-----|0|${new Date().toLocaleString('en-US')}|${basePath}\n`;
+                let manifestStr = `d-----|0|${nowLwt}|${basePath}\n`;
                 for (const f of files) {
                     const mode = f.isDir ? 'd-----' : '-a----';
                     const len = f.size;
-                    const lwt = new Date(f.lastModified).toLocaleString('en-US');
-                    const fullName = `${basePath}/${f.path}`;
+                    
+                    const d = new Date(f.lastModified);
+                    const padDate = n => n.toString().padStart(2, '0');
+                    const lwt = `${padDate(d.getMonth() + 1)}/${padDate(d.getDate())}/${d.getFullYear()} ${padDate(d.getHours())}:${padDate(d.getMinutes())}:${padDate(d.getSeconds())}`;
+                    
+                    const fullName = `${basePath}${genSep}${f.path}`;
                     manifestStr += `${mode}|${len}|${lwt}|${fullName}\n`;
                 }
                 
@@ -486,11 +497,31 @@
 
         function parseManifestText(text, filename) {
             const lines = text.split('\n');
+            
+            let fileSep = '/';
+            for (let i = 0; i < Math.min(lines.length, 50); i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                if (line.includes('|')) {
+                    const parts = line.split('|');
+                    if (parts.length >= 4) {
+                        const p = parts.slice(3).join('|');
+                        if (p.match(/^[A-Za-z]:/) || (p.includes('\\') && !p.includes('\\ '))) {
+                            fileSep = '\\';
+                        }
+                    }
+                    break;
+                } else if (line.split(/\s+/).length >= 11) {
+                    fileSep = '/';
+                    break;
+                }
+            }
+
             lines.forEach(line => {
                 const trimmed = line.trim();
                 if (!trimmed) return;
                 
-                let name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink;
+                let name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink, sep = fileSep;
 
                 if (trimmed.includes('|')) {
                     const parts = trimmed.split('|');
@@ -503,18 +534,26 @@
                     const parsedTime = Date.parse(dateStr);
                     dateValue = isNaN(parsedTime) ? 0 : parsedTime;
 
-                    let rawPath = parts.slice(3).join('|').replace(/\\/g, '/');
-                    if (!rawPath.startsWith('/')) {
-                        rawPath = '/' + rawPath;
+                    let rawPath = parts.slice(3).join('|');
+                    if (sep === '\\') {
+                        rawPath = rawPath.replace(/\//g, '\\');
+                    } else {
+                        rawPath = rawPath.replace(/\\/g, '/');
+                        if (!rawPath.startsWith('/')) rawPath = '/' + rawPath;
                     }
                     fullPath = rawPath;
 
                     isDir = mode.toLowerCase().includes('d');
                     isLink = mode.toLowerCase().includes('l');
 
-                    const pathSegments = fullPath.split('/').filter(Boolean);
+                    const pathSegments = fullPath.split(/[\\/]/).filter(Boolean);
                     name = pathSegments[pathSegments.length - 1] || '/';
-                    parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                    if (sep === '\\') {
+                        parentPath = pathSegments.slice(0, pathSegments.length - 1).join('\\');
+                        if (parentPath === '' && pathSegments.length > 0) parentPath = pathSegments[0]; 
+                    } else {
+                        parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                    }
                 } else {
                     const parts = trimmed.split(/\s+/);
                     if (parts.length < 11) return;
@@ -524,22 +563,30 @@
                     dateStr = `${parts[7]} ${parts[8]} ${parts[9]}`;
                     
                     let rawPath = parts.slice(10).join(' ').replace(/\\\s/g, ' ');
-                    if (!rawPath.startsWith('/')) {
-                        rawPath = '/' + rawPath;
+                    if (sep === '\\') {
+                        rawPath = rawPath.replace(/\//g, '\\');
+                    } else {
+                        rawPath = rawPath.replace(/\\/g, '/');
+                        if (!rawPath.startsWith('/')) rawPath = '/' + rawPath;
                     }
                     fullPath = rawPath;
 
                     isDir = perms.startsWith('d');
                     isLink = perms.startsWith('l');
 
-                    const pathSegments = fullPath.split('/').filter(Boolean);
+                    const pathSegments = fullPath.split(/[\\/]/).filter(Boolean);
                     name = pathSegments[pathSegments.length - 1] || '/';
-                    parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                    if (sep === '\\') {
+                        parentPath = pathSegments.slice(0, pathSegments.length - 1).join('\\');
+                        if (parentPath === '' && pathSegments.length > 0) parentPath = pathSegments[0]; 
+                    } else {
+                        parentPath = '/' + pathSegments.slice(0, pathSegments.length - 1).join('/');
+                    }
                     dateValue = convertToTimestamp(parts[7], parts[8], parts[9]);
                 }
 
                 allItems.push({ 
-                    name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink, sourceFile: filename 
+                    name, size, dateStr, dateValue, fullPath, parentPath, isDir, isLink, sourceFile: filename, sep
                 });
             });
         }
@@ -555,19 +602,20 @@
 
         function parseQueryToRPN(queryStr) {
             if (!queryStr.trim()) return null;
-            const tokens = queryStr.match(/\(|\)|\bAND\b|\bOR\b|"[^"]*"|[^\s()]+/g) || [];
+            const tokens = queryStr.match(/\(|\)|\bAND\b|\bOR\b|\bNOT\b|"[^"]*"|[^\s()]+/g) || [];
             const outputQueue = [];
             const operatorStack = [];
-            const precedence = { 'OR': 1, 'AND': 2 };
+            const precedence = { 'OR': 1, 'AND': 2, 'NOT': 3 };
             let prevType = null; 
 
             for (let token of tokens) {
                 let currentType = 'TERM';
                 if (token === 'AND' || token === 'OR') currentType = 'OP';
+                else if (token === 'NOT') currentType = 'NOT';
                 else if (token === '(') currentType = 'OPEN_PAREN';
                 else if (token === ')') currentType = 'CLOSE_PAREN';
 
-                if (currentType === 'TERM' || currentType === 'OPEN_PAREN') {
+                if (currentType === 'TERM' || currentType === 'OPEN_PAREN' || currentType === 'NOT') {
                     if (prevType === 'TERM' || prevType === 'CLOSE_PAREN') {
                         while (operatorStack.length && operatorStack[operatorStack.length - 1] !== '(' && 
                                precedence[operatorStack[operatorStack.length - 1]] >= precedence['AND']) {
@@ -577,9 +625,11 @@
                     }
                 }
 
-                if (currentType === 'OP') {
+                if (currentType === 'OP' || currentType === 'NOT') {
                     while (operatorStack.length && operatorStack[operatorStack.length - 1] !== '(' && 
-                           precedence[operatorStack[operatorStack.length - 1]] >= precedence[token]) {
+                           (currentType === 'NOT' 
+                               ? precedence[operatorStack[operatorStack.length - 1]] > precedence[token] 
+                               : precedence[operatorStack[operatorStack.length - 1]] >= precedence[token])) {
                         outputQueue.push(operatorStack.pop());
                     }
                     operatorStack.push(token);
@@ -628,6 +678,10 @@
                         const b = stack.pop();
                         const a = stack.pop();
                         stack.push(!!(a || b));
+                    } else if (node === 'NOT') {
+                        if (stack.length < 1) return false;
+                        const a = stack.pop();
+                        stack.push(!a);
                     } else if (node && node.term !== undefined) {
                         if (node.term.includes('*') || node.term.includes('?')) {
                             let regStr = node.term.replace(/[.+^${}()|[\]\\]/g, '\\$&');
@@ -688,8 +742,12 @@
             if (allItems.length === 0) return '';
             
             let commonParts = null;
+            let commonSep = '/';
             for (let item of allItems) {
-                const parts = item.fullPath.split('/').filter(Boolean);
+                const sep = item.sep || '/';
+                if (commonParts === null) commonSep = sep;
+
+                const parts = item.fullPath.split(/[\\/]/).filter(Boolean);
                 const dirParts = item.isDir ? parts : parts.slice(0, -1);
                 
                 if (commonParts === null) {
@@ -705,10 +763,10 @@
             }
             
             if (!commonParts || commonParts.length === 0) return '';
-            return '/' + commonParts.join('/');
+            return commonSep === '\\' ? commonParts.join('\\') : '/' + commonParts.join('/');
         }
 
-        function changeDirectory(path) {
+        function changeDirectory(path, skipHistory = false) {
             currentPath = path;
             
             // Clear filter inputs that cause the view to flatten globally, 
@@ -725,8 +783,20 @@
                 maxSizeInp.value = '';
             }
             
+            if (!skipHistory) {
+                window.history.pushState({ path: currentPath }, '', '#' + currentPath);
+            }
+            
             renderGrid();
         }
+
+        window.addEventListener('popstate', (event) => {
+            if (event.state && event.state.path !== undefined) {
+                changeDirectory(event.state.path, true);
+            } else {
+                changeDirectory(findCommonPathPrefix(), true);
+            }
+        });
 
         function updateBreadcrumbs() {
             const container = document.getElementById('breadcrumbs');
@@ -740,11 +810,21 @@
 
             if (!currentPath) return;
 
-            const segments = currentPath.split('/').filter(Boolean);
+            const sep = (currentPath.includes('\\') || currentPath.match(/^[A-Za-z]:/)) ? '\\' : '/';
+            const segments = currentPath.split(/[\\/]/).filter(Boolean);
             let cumulativePath = '';
             
-            segments.forEach((seg) => {
-                cumulativePath += '/' + seg;
+            segments.forEach((seg, idx) => {
+                if (sep === '\\') {
+                    if (idx === 0) {
+                        cumulativePath = seg;
+                    } else {
+                        cumulativePath += sep + seg;
+                    }
+                } else {
+                    cumulativePath += '/' + seg;
+                }
+
                 const arrow = document.createElement('span');
                 arrow.innerText = '❯';
                 arrow.className = 'text-slate-600 font-bold text-[10px] px-1';
@@ -806,34 +886,45 @@
                 finalRenderSet = globallyFiltered;
             } else {
                 globallyFiltered.forEach(item => {
+                    const sep = item.sep || '/';
                     if (item.parentPath === currentPath) {
                         finalRenderSet.push(item);
-                    } else if (currentPath === '' || item.parentPath.startsWith(currentPath + '/')) {
+                    } else if (currentPath === '' || item.parentPath.startsWith(currentPath + sep)) {
                         let trackingSlice = currentPath === '' ? item.fullPath : item.fullPath.slice(currentPath.length);
-                        let pathChunks = trackingSlice.split('/').filter(Boolean);
+                        let pathChunks = trackingSlice.split(/[\\/]/).filter(Boolean);
                         
                         if (pathChunks.length > 1 || (pathChunks.length === 1 && item.isDir)) {
                             let nextSegment = pathChunks[0];
-                            let nextPathString = currentPath === '' ? '/' + nextSegment : currentPath + '/' + nextSegment;
-                            virtualDirectoryMap.add(JSON.stringify({ name: nextSegment, fullPath: nextPathString }));
+                            let nextPathString;
+                            if (currentPath === '') {
+                                nextPathString = sep === '\\' ? nextSegment : '/' + nextSegment;
+                                // Handle edge case for C: as root segment
+                                if (sep === '\\' && nextSegment.match(/^[A-Za-z]:$/)) {
+                                    nextPathString = nextSegment;
+                                }
+                            } else {
+                                nextPathString = currentPath + sep + nextSegment;
+                            }
+                            virtualDirectoryMap.add(JSON.stringify({ name: nextSegment, fullPath: nextPathString, sep: sep }));
                         }
                     }
                 });
 
                 virtualDirectoryMap.forEach(vJson => {
-                    let dirNode = JSON.parse(vJson);
-                    if (!finalRenderSet.some(existingItem => existingItem.isDir && existingItem.fullPath === dirNode.fullPath)) {
+                    const vDir = JSON.parse(vJson);
+                    if (!finalRenderSet.find(i => i.fullPath === vDir.fullPath && i.isDir)) {
                         finalRenderSet.push({
-                            name: dirNode.name,
+                            name: vDir.name,
+                            fullPath: vDir.fullPath,
+                            parentPath: currentPath,
                             size: 0,
                             dateStr: '-',
                             dateValue: 0,
-                            fullPath: dirNode.fullPath,
-                            parentPath: currentPath,
                             isDir: true,
                             isLink: false,
+                            sourceFile: '-',
                             isVirtualFolder: true,
-                            sourceFile: '-'
+                            sep: vDir.sep
                         });
                     }
                 });
@@ -864,10 +955,10 @@
 
                 let itemLabel = `<span class="truncate block">${item.name}</span>`;
                 if (item.isDir) {
-                    itemLabel = `<span class="text-amber-300 font-semibold cursor-pointer hover:underline flex items-center gap-1 truncate" onclick="changeDirectory('${item.fullPath}')">📁 ${item.name}</span>`;
+                    itemLabel = `<span class="text-amber-300 font-semibold cursor-pointer hover:underline flex items-center gap-1 truncate" onclick="changeDirectory('${item.fullPath.replace(/\\/g, '\\\\')}')">📁 ${item.name}</span>`;
                 }
 
-                let resolvedTargetUrl = item.fullPath;
+                let resolvedTargetUrl = item.fullPath.replace(/\\/g, '/');
                 if (!resolvedTargetUrl.startsWith('file://') && !resolvedTargetUrl.startsWith('http')) {
                     if (resolvedTargetUrl.startsWith('/') && resolvedTargetUrl.match(/^\/[A-Za-z]:/)) {
                         resolvedTargetUrl = 'file://' + resolvedTargetUrl;
@@ -879,15 +970,16 @@
                 }
 
                 row.innerHTML = `
-                    <td class="p-2 text-[11px] font-bold ${typeColor} border-r border-slate-800 truncate">${typeBadge}</td>
+                    <td class="p-2 text-[11px] font-bold ${typeColor} border-r border-slate-800 truncate" title="Open local resource">
+                        <a href="${resolvedTargetUrl}" target="_blank" class="no-underline hover:text-emerald-400 transition flex items-center justify-start gap-1">
+                            <span>${typeBadge}</span>
+                        </a>
+                    </td>
                     <td class="p-2 font-semibold border-r border-slate-800 truncate">${itemLabel}</td>
                     <td class="p-2 text-slate-300 border-r border-slate-800 truncate">${item.isDir && item.isVirtualFolder ? '-' : formatBytes(item.size)}</td>
                     <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate">${item.dateStr}</td>
                     <td class="p-2 text-slate-400 text-[11px] border-r border-slate-800 truncate" title="Local resource path">
-                        <div class="flex items-center justify-start gap-2">
-                            <a href="${resolvedTargetUrl}" target="_blank" title="Open file location" class="no-underline text-slate-500 hover:text-emerald-400 transition shrink-0 text-sm">↗️</a>
-                            <span class="truncate select-all cursor-text" title="Click to select path">${item.fullPath}</span>
-                        </div>
+                        <span class="truncate select-all cursor-text block" title="Click to select path">${item.fullPath}</span>
                     </td>
                     <td class="p-2 text-slate-500 text-[11px] truncate" title="${item.sourceFile}">${item.sourceFile}</td>
                 `;

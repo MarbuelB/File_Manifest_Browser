@@ -7,7 +7,9 @@ An interactive, zero-install, single-file client-side web application designed t
 * **Zero Local Software:** Runs fully localized within any modern browser window (Chrome, Edge, Firefox). Requires no local web servers, node environments, or installation scripts.
 * **Native Browser Auto-Generation:** Leverages the modern File System Access API to scan local folders and auto-generate manifest logs directly inside the browser, no terminal required!
 * **Smart Root Navigation:** Automatically calculates the deepest common folder across all loaded files and jumps you straight there, skipping empty, linear parent directories.
+* **Native Browser History Integration:** Automatically syncs folder traversal with the browser's History API, allowing seamless use of the native Back and Forward buttons for navigation.
 * **Dual-Format Auto-Detection Engine:** Line-by-line smart format interpretation that seamlessly reads standard Linux file system trees and native Windows command logs side-by-side.
+* **Native OS Path Handling:** Parses, renders, and manages file paths using their true operating system separator (`\` for Windows, `/` for Linux) natively, ensuring perfect accuracy for copying paths and system integration.
 * **Interactive Tree Browser:** Dynamically aggregates independent snapshots under a single unified virtual Root node, automatically merging overlapping directory branches while preserving distinct target file objects.
 * **Advanced Boolean Query Parser:** Full client-side Boolean implementation backing case-sensitive operators (`AND`, `OR`) alongside parentheses `()` for processing highly customized logic stacks.
 * **Multi-Scope Targeted Searching:** Divided control inputs allowing isolated filter rules applied to individual File/Folder Names, Absolute File System Paths, or combined criteria concurrently.
@@ -59,11 +61,11 @@ Run this custom pipeline string from a native administrative PowerShell console 
 The application features a dedicated custom Shunting-Yard tokenization algorithm to process logical syntax layers.
 
 ### Operator Case Sensitivity
-* To prevent literal terms within filename strings (e.g., matching the word "and" inside "Andrea") from splitting the token analyzer, logical commands **MUST** be entered in absolute capital letters (`AND`, `OR`).
-* Lowercase string variations like `and` or `or` are interpreted as plain, literal search terms.
+* To prevent literal terms within filename strings (e.g., matching the word "and" inside "Andrea") from splitting the token analyzer, logical commands **MUST** be entered in absolute capital letters (`AND`, `OR`, `NOT`).
+* Lowercase string variations like `and` or `not` are interpreted as plain, literal search terms.
 
 ### Explicit Precedence Grouping
-The search parser processes inputs in standard mathematical priority order (`AND` queries are resolved prior to `OR` branches). Use parentheses `()` to enforce custom logical conditions.
+The search parser processes inputs in standard mathematical priority order (`NOT` is resolved first, followed by `AND` queries, and finally `OR` branches). Use parentheses `()` to enforce custom logical conditions.
 
 ### Wildcard Logic (`*` and `?`)
 * If an input contains no wildcards, it performs a default "contains" string lookup.
