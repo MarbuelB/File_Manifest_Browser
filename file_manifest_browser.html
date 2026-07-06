@@ -45,14 +45,14 @@
                 </h1>
                 
                 <div class="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                    <button id="generateBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Scan local folder and auto-generate manifest">
-                        🪄 Auto-Generate
+                    <button id="generateBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Scan local folder and auto-generate manifest (Note: significantly slower than CLI)">
+                        🪄 Auto-Generate Manifest
                     </button>
-                    <button id="folderBtn" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1">
-                        📁 Select Folder
+                    <button id="folderBtn" class="bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Select a folder containing existing .manifest files">
+                        📁 Select Folder with Manifests
                     </button>
-                    <button id="filesBtn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1">
-                        📄 Select File(s)
+                    <button id="filesBtn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Select one or more existing .manifest files">
+                        📄 Select Manifest File(s)
                     </button>
                     <button id="helpToggleBtn" class="border border-slate-700 hover:bg-slate-800 text-slate-400 font-medium text-xs px-2.5 py-1.5 rounded transition flex items-center gap-1">
                         ❓ Commands Help
@@ -98,7 +98,7 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Search Full Path</label>
-                    <input type="text" id="searchPathInp" placeholder="e.g. (scicore OR group) AND (data OR raw)" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
+                    <input type="text" id="searchPathInp" placeholder="e.g. (scicore NOT group) AND data" class="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono">
                 </div>
                 
                 <div>

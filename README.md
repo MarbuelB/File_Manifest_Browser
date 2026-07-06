@@ -30,19 +30,12 @@ Because the application is fully standalone, setup requires only saving the `fil
 
 ---
 
-## Manifest Generation Commands
+## Loading & Generating Manifests
 
-### 1. Automatic Client-Side Generation (Recommended)
-You can generate manifest files directly from the browser without using terminal commands! 
-1. Click the **🪄 Auto-Generate** button in the top left.
-2. Select any folder on your local computer.
-3. If prompted, paste the absolute path of your folder to ensure all file links are fully clickable.
-The browser will securely scan the folder, save a `.manifest` file for your records, and instantly load the results into the viewer.
+The primary (and recommended) way to use this application is to load **existing** `.manifest` files that were generated via your operating system's native command line. Generating manifests directly through the browser is supported but is significantly slower due to browser sandbox limitations.
 
----
-
-### 2. Manual CLI Generation
-To view file layers of remote servers or environments where the browser cannot access the file system directly, create snapshot files using these native operating system terminal commands:
+### 1. Manual CLI Generation (Recommended & Fastest)
+Create snapshot files using these native operating system terminal commands, then load them into the browser using the **📁 Select Folder with Manifests** or **📄 Select Manifest File(s)** buttons.
 
 #### In Linux Environments
 Run the standard find command utilizing the long-listing flag to output the precise 11-column string format:
@@ -55,6 +48,16 @@ Run this custom pipeline string from a native administrative PowerShell console 
     gci "C:\path\to\target\folder" -r | % { "$($_.Mode)|$($_.Length)|$($_.LastWriteTime)|$($_.FullName)" } > windows.manifest
 
 ---
+
+### 2. Automatic Client-Side Generation (Slower)
+If you don't want to use terminal commands, you can generate manifest files directly from the browser. *Note: This is significantly slower than CLI generation, especially for large directories.*
+1. Click the **🪄 Auto-Generate Manifest** button in the top left.
+2. Select any folder on your local computer.
+3. If prompted, paste the absolute path of your folder to ensure all file links are fully clickable.
+
+The browser will securely scan the folder, save a `.manifest` file for your records, and instantly load the results into the viewer.
+
+
 
 ## Advanced Search Queries
 
@@ -79,7 +82,7 @@ The search parser processes inputs in standard mathematical priority order (`NOT
     e.g. (.pdf OR .ppt) AND present*
 
 * Path Search Example:
-    e.g. (scicore OR group) AND (data OR raw)
+    e.g. (scicore NOT group) AND (data OR raw)
 
 ---
 
