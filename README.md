@@ -22,7 +22,7 @@ An interactive, zero-install, single-file client-side web application designed t
 ## Getting Started
 
 ### Installation
-Because the application is fully standalone, setup requires only saving the file_manifest_browser.html file locally. Double-click the file to open it natively in your browser.
+Because the application is fully standalone, setup requires only saving the `file_manifest_browser.html` file locally. Double-click the file to open it natively in your browser.
 
 ---
 
