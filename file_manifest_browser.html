@@ -54,6 +54,9 @@
                     <button id="filesBtn" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Select one or more existing .manifest files">
                         📄 Select Manifest File(s)
                     </button>
+                    <button id="exportBtn" class="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1" title="Export all currently matching paths to a text file">
+                        💾 Export Current List
+                    </button>
                     <button id="helpToggleBtn" class="border border-slate-700 hover:bg-slate-800 text-slate-400 font-medium text-xs px-2.5 py-1.5 rounded transition flex items-center gap-1">
                         ❓ Commands Help
                     </button>
@@ -141,9 +144,14 @@
                 </div>
             </div>
 
-            <div class="bg-slate-950 px-4 py-2 rounded-lg mb-4 text-xs font-mono flex items-center gap-2 overflow-x-auto border border-slate-800 shadow-md">
-                <span class="text-slate-500 shrink-0">📍 Path Tree Scope:</span>
-                <div id="breadcrumbs" class="flex items-center gap-1 text-emerald-400 whitespace-nowrap"></div>
+            <div class="bg-slate-950 px-4 py-2 rounded-lg mb-4 text-xs font-mono flex items-center justify-between border border-slate-800 shadow-md">
+                <div class="flex items-center gap-2 overflow-x-auto w-full">
+                    <span class="text-slate-500 shrink-0">📍 Path Tree Scope:</span>
+                    <div id="breadcrumbs" class="flex items-center gap-1 text-emerald-400 whitespace-nowrap"></div>
+                </div>
+                <button id="flattenBtn" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded transition ml-4 shrink-0 border border-slate-700 font-bold tracking-wider" title="Show all files within this folder and its subfolders" onclick="toggleFlatten()">
+                    📄 Flatten View
+                </button>
             </div>
 
             <div class="bg-slate-800 rounded-xl shadow-2xl overflow-hidden border border-slate-700 w-full flex flex-col h-[65vh]">
@@ -181,7 +189,13 @@
                     </table>
                 </div>
                 <div id="tableFooter" class="bg-slate-950 p-2.5 text-xs text-slate-400 font-mono text-right border-t border-slate-800 flex justify-between items-center px-4 shrink-0">
-                    <button id="resetAllFilters" class="text-slate-500 hover:text-slate-300 transition text-[11px] underline decoration-dotted">Reset Scope & Back to Root</button>
+                    <div class="flex items-center gap-3">
+                        <button id="resetAllFilters" class="text-slate-500 hover:text-slate-300 transition text-[11px] underline decoration-dotted">Reset Scope & Back to Root</button>
+                        <div class="flex items-center gap-2 border-l border-slate-800 pl-3">
+                            <label for="displayLimitInp">Display limit:</label>
+                            <input type="number" id="displayLimitInp" value="1000" min="10" step="100" class="w-16 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-center text-slate-200 focus:outline-none focus:border-emerald-500 transition">
+                        </div>
+                    </div>
                     <span id="footerMatchCount">Rows matched: 0</span>
                 </div>
             </div>
@@ -193,7 +207,21 @@
         let currentPath = ''; 
         
         let sortColumn = 'isDir';
-        let sortAscending = false; 
+        let sortAscending = false;
+        let isFlattened = false;
+
+        function toggleFlatten() {
+            isFlattened = !isFlattened;
+            const btn = document.getElementById('flattenBtn');
+            if (isFlattened) {
+                btn.classList.remove('text-slate-400', 'bg-slate-800', 'hover:bg-slate-700');
+                btn.classList.add('text-white', 'bg-emerald-600', 'hover:bg-emerald-500');
+            } else {
+                btn.classList.remove('text-white', 'bg-emerald-600', 'hover:bg-emerald-500');
+                btn.classList.add('text-slate-400', 'bg-slate-800', 'hover:bg-slate-700');
+            }
+            renderGrid();
+        } 
 
         const folderInput = document.getElementById('folderInput');
         const filesInput = document.getElementById('filesInput');
@@ -209,6 +237,54 @@
         document.getElementById('folderBtn').addEventListener('click', () => folderInput.click());
         document.getElementById('filesBtn').addEventListener('click', () => filesInput.click());
         document.getElementById('helpToggleBtn').addEventListener('click', () => helpDrawer.classList.toggle('hidden'));
+        
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            if (!allItems || allItems.length === 0) {
+                alert('No data to export.');
+                return;
+            }
+            const searchNameVal = document.getElementById('searchNameInp').value;
+            const searchPathVal = document.getElementById('searchPathInp').value;
+            const minSizeInpValue = document.getElementById('minSizeInp').value;
+            const maxSizeInpValue = document.getElementById('maxSizeInp').value;
+            const sizeUnit = document.getElementById('sizeUnitSel').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            const srcFilter = document.getElementById('sourceFilter').value;
+
+            let multiplier = 1024 * 1024; 
+            if (sizeUnit === 'KB') multiplier = 1024;
+            if (sizeUnit === 'GB') multiplier = 1024 * 1024 * 1024;
+
+            const minSizeBytes = minSizeInpValue !== '' ? parseFloat(minSizeInpValue) * multiplier : 0;
+            const maxSizeBytes = maxSizeInpValue !== '' ? parseFloat(maxSizeInpValue) * multiplier : Infinity;
+
+            const compiledNameRPN = parseQueryToRPN(searchNameVal);
+            const compiledPathRPN = parseQueryToRPN(searchPathVal);
+
+            let exportPaths = [];
+            allItems.forEach(item => {
+                if (srcFilter !== 'all' && item.sourceFile !== srcFilter) return;
+                if (typeFilter === 'files' && item.isDir) return;
+                if (typeFilter === 'dirs' && !item.isDir) return;
+                if (item.size < minSizeBytes || item.size > maxSizeBytes) return;
+                if (searchNameVal && !evaluateRPN(compiledNameRPN, item.name)) return;
+                if (searchPathVal && !evaluateRPN(compiledPathRPN, item.fullPath)) return;
+                exportPaths.push(item.fullPath);
+            });
+
+            if (exportPaths.length === 0) {
+                alert('No matching paths to export.');
+                return;
+            }
+
+            const blob = new Blob([exportPaths.join('\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `manifest_export_${Date.now()}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
 
         document.getElementById('generateBtn').addEventListener('click', async () => {
             try {
@@ -418,6 +494,7 @@
 
         document.getElementById('resetFilters').addEventListener('click', clearFilterControls);
         document.getElementById('resetAllFilters').addEventListener('click', () => { clearFilterControls(); currentPath = findCommonPathPrefix(); renderGrid(); });
+        document.getElementById('displayLimitInp').addEventListener('change', renderGrid);
 
         function clearFilterControls() {
             document.getElementById('searchNameInp').value = '';
@@ -769,6 +846,13 @@
         function changeDirectory(path, skipHistory = false) {
             currentPath = path;
             
+            isFlattened = false;
+            const flattenBtn = document.getElementById('flattenBtn');
+            if (flattenBtn) {
+                flattenBtn.classList.remove('text-white', 'bg-emerald-600', 'hover:bg-emerald-500');
+                flattenBtn.classList.add('text-slate-400', 'bg-slate-800', 'hover:bg-slate-700');
+            }
+
             // Clear filter inputs that cause the view to flatten globally, 
             // so the user can actually see inside the folder they clicked
             const searchNameInp = document.getElementById('searchNameInp');
@@ -884,6 +968,12 @@
 
             if (isAnyFilteringActive) {
                 finalRenderSet = globallyFiltered;
+            } else if (isFlattened) {
+                finalRenderSet = globallyFiltered.filter(item => {
+                    if (currentPath === '') return true;
+                    const sep = item.sep || '/';
+                    return item.parentPath === currentPath || item.parentPath.startsWith(currentPath + sep);
+                });
             } else {
                 globallyFiltered.forEach(item => {
                     const sep = item.sep || '/';
@@ -942,7 +1032,8 @@
                 return 0;
             });
 
-            const UI_LIMIT = 2000;
+            const limitVal = parseInt(document.getElementById('displayLimitInp').value, 10);
+            const UI_LIMIT = isNaN(limitVal) ? 1000 : limitVal;
             const printList = finalRenderSet.slice(0, UI_LIMIT);
 
             printList.forEach(item => {
@@ -986,7 +1077,12 @@
                 tableBody.appendChild(row);
             });
 
-            document.getElementById('footerMatchCount').innerText = `Displaying lines: ${printList.length.toLocaleString()} of ${finalRenderSet.length.toLocaleString()} matching profiles.`;
+            let totalSizeBytes = 0;
+            for (let i = 0; i < globallyFiltered.length; i++) {
+                totalSizeBytes += globallyFiltered[i].size || 0;
+            }
+            
+            document.getElementById('footerMatchCount').innerHTML = `Displaying rows: <span class="text-white">${printList.length.toLocaleString()}</span> of <span class="text-white">${finalRenderSet.length.toLocaleString()}</span> in view &nbsp;|&nbsp; Total matched items: <span class="text-sky-400">${globallyFiltered.length.toLocaleString()}</span> (<span class="text-emerald-400">${formatBytes(totalSizeBytes)}</span>)`;
         }
 
         // --- NATIVE MOUSE COLUMN DRAG/RESIZE INTERACTION UTILITY LAYER ---

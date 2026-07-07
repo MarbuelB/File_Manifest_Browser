@@ -16,6 +16,10 @@ An interactive, zero-install, single-file client-side web application designed t
 * **Granular Numerical Sizing Bounds:** Configurable "From" and "To" size-range parameters supporting automated mathematical translations across KB, MB, and GB bounds.
 * **Wildcard Mask Matching:** Complete support for global execution patterns like `*` for multi-character sequences and `?` for targeted single-character tracking.
 * **Cumulative Memory Context:** Re-engineered ingestion pipelines that append newly selected assets to the current viewport dynamically instead of overwriting existing catalog records.
+* **Flatten View Navigation:** An interactive "Flatten View" toggle inside the breadcrumb banner that instantly dissolves virtual folder grouping to display every nested file and subdirectory inside the current scope simultaneously.
+* **Instant Path Export:** A dedicated "Export Current List" tool that executes active filter bounds against the dataset and generates an offline `.txt` manifest of pure absolute file paths perfectly formatted for `xargs` and `PowerShell` loops.
+* **Real-time Size Summation:** A built-in footer component that dynamically calculates and aggregates the total byte size of all items matching your current filters in milliseconds.
+* **Configurable UI Limits:** A customizable numeric bounding config in the footer allowing you to safely throttle DOM row generation based on your hardware.
 * **Automated Suffix Deduplication:** Intelligent indexing that identifies overlapping filename imports and assigns custom tags (`#2`, `#3`, etc.) to isolate individual source manifest filters.
 * **Draggable Header Resizers:** Native grid boundary tracking allowing you to click-and-drag table borders to configure column widths dynamically.
 * **Click-to-Open Redirection:** Leverages native browser handling to open target paths on your system using the `file://` scheme straight from the table.
